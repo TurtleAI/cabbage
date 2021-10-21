@@ -2,6 +2,17 @@ defmodule Cabbage.Feature.Helpers do
   @moduledoc false
   require Logger
 
+  def indent(text, prefix) do
+    text
+    |> String.split("\n")
+    |> Enum.map(fn line -> prefix <> line end)
+    |> Enum.join("\n")
+  end
+
+  def color(text, color) do
+    color <> text <> IO.ANSI.reset()
+  end
+
   def add_step(module, string_or_regex, vars, state, block, metadata) do
     regex = to_regex_ast(string_or_regex)
 

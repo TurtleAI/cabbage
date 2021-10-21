@@ -241,14 +241,14 @@ defmodule Cabbage.Feature do
           def unquote(name)(exunit_state) do
             Cabbage.Feature.Helpers.start_state(unquote(scenario.name), __MODULE__, exunit_state)
 
-            unquote(Enum.map(scenario.steps, &compile_step(&1, steps, scenario.name)))
+            unquote(Enum.map(scenario.steps, &compile_step(&1, steps, scenario)))
           end
         end
       end
     end)
   end
 
-  def compile_step(step, steps, scenario_name) when is_list(steps) do
+  def compile_step(step, steps, scenario) when is_list(steps) do
     step_type =
       step.__struct__
       |> Module.split()
@@ -256,14 +256,21 @@ defmodule Cabbage.Feature do
 
     step
     |> find_implementation_of_step(steps)
-    |> compile(step, step_type, scenario_name)
+    |> compile(step, step_type, scenario)
+  end
+
+  defp step_to_string(%type{text: text}) do
+    type_str = type
+      |> Module.split()
+      |> List.last()
+    "#{type_str} #{text}"
   end
 
   defp compile(
          {:{}, _, [regex, vars, state_pattern, block, metadata]},
          step,
          step_type,
-         scenario_name
+         scenario
        ) do
     {regex, _} = Code.eval_quoted(regex)
 
@@ -271,10 +278,22 @@ defmodule Cabbage.Feature do
       extract_named_vars(regex, step.text)
       |> Map.merge(%{table: step.table_data, doc_string: step.doc_string})
 
+    previous_step_lines =
+      scenario.steps
+      |> Enum.take_while(& &1 != step)
+      |> Enum.map(&step_to_string/1)
+      |> Enum.map(&String.trim/1)
+      |> Enum.map(&color(&1, IO.ANSI.green()))
+
+    failing_line = step |> step_to_string() |> color(IO.ANSI.red())
+
+    gherkin_error_message = "#{scenario.name}\n"
+      <> indent(Enum.join(previous_step_lines ++ [failing_line], "\n"), "  ")
+
     quote generated: true do
       with {_type, unquote(vars)} <- {:variables, unquote(Macro.escape(named_vars))},
            {_type, state = unquote(state_pattern)} <-
-             {:state, Cabbage.Feature.Helpers.fetch_state(unquote(scenario_name), __MODULE__)} do
+             {:state, Cabbage.Feature.Helpers.fetch_state(unquote(scenario.name), __MODULE__)} do
         try do
           new_state =
             case unquote(block) do
@@ -282,12 +301,12 @@ defmodule Cabbage.Feature do
               _ -> state
             end
 
-          Cabbage.Feature.Helpers.update_state(unquote(scenario_name), __MODULE__, fn _ ->
+          Cabbage.Feature.Helpers.update_state(unquote(scenario.name), __MODULE__, fn _ ->
             new_state
           end)
         rescue
           e in ExUnit.AssertionError ->
-            message_with_context = "#{unquote(scenario_name)}\n  #{unquote(step_type)} #{unquote(step.text)}\n#{e.message}"
+            message_with_context = "#{unquote(gherkin_error_message)}\n#{e.message}"
             reraise %{e | message: message_with_context}, __STACKTRACE__
         end
 
