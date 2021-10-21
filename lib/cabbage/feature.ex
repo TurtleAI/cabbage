@@ -305,9 +305,11 @@ defmodule Cabbage.Feature do
             new_state
           end)
         rescue
-          e in ExUnit.AssertionError ->
-            message_with_context = "#{unquote(gherkin_error_message)}\n#{e.message}"
-            reraise %{e | message: message_with_context}, __STACKTRACE__
+          e ->
+            reraise %Cabbage.StepFailedError{
+              message: unquote(gherkin_error_message),
+              inner_exception: e
+            }, __STACKTRACE__
         end
 
         Logger.info([
