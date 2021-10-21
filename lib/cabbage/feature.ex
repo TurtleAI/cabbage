@@ -275,15 +275,21 @@ defmodule Cabbage.Feature do
       with {_type, unquote(vars)} <- {:variables, unquote(Macro.escape(named_vars))},
            {_type, state = unquote(state_pattern)} <-
              {:state, Cabbage.Feature.Helpers.fetch_state(unquote(scenario_name), __MODULE__)} do
-        new_state =
-          case unquote(block) do
-            {:ok, new_state} -> Map.merge(state, new_state)
-            _ -> state
-          end
+        try do
+          new_state =
+            case unquote(block) do
+              {:ok, new_state} -> Map.merge(state, new_state)
+              _ -> state
+            end
 
-        Cabbage.Feature.Helpers.update_state(unquote(scenario_name), __MODULE__, fn _ ->
-          new_state
-        end)
+          Cabbage.Feature.Helpers.update_state(unquote(scenario_name), __MODULE__, fn _ ->
+            new_state
+          end)
+        rescue
+          e in ExUnit.AssertionError ->
+            message_with_context = "#{unquote(scenario_name)}\n  #{unquote(step_type)} #{unquote(step.text)}\n#{e.message}"
+            reraise %{e | message: message_with_context}, __STACKTRACE__
+        end
 
         Logger.info([
           "\t\t",
